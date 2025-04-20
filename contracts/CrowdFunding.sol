@@ -171,9 +171,16 @@ contract CrowdFunding {
     }
 
     function claimRefund(uint256 _id) public campaignExists(_id) {
+        // First check if user has donated anything
+        uint256 amount = fundsByDonator[_id][msg.sender];
+        require(
+            amount > 0,
+            "You have not donated to this campaign or already claimed your refund"
+        );
+
         Campaign storage campaign = campaigns[_id];
 
-        // Only allow refunds if campaign failed
+        // Then check if campaign is eligible for refunds
         require(
             block.timestamp > campaign.deadline &&
                 campaign.amountCollected < campaign.target,
@@ -186,11 +193,11 @@ contract CrowdFunding {
             emit CampaignStateChanged(_id, CampaignState.Failed);
         }
 
-        uint256 amount = fundsByDonator[_id][msg.sender];
-        require(amount > 0, "No funds to refund");
-
         // Reset refund amount before transfer to prevent reentrancy
         fundsByDonator[_id][msg.sender] = 0;
+
+        // Decrease the campaign's amountCollected
+        campaign.amountCollected -= amount;
 
         // Send refund
         (bool success, ) = payable(msg.sender).call{value: amount}("");
