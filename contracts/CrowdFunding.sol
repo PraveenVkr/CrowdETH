@@ -24,8 +24,11 @@ contract CrowdFunding {
 
     mapping(uint256 => Campaign) public campaigns;
     mapping(uint256 => mapping(address => uint256)) public fundsByDonator;
+    mapping(uint256 => mapping(address => bool)) public refundClaimed;
+    mapping(address => uint256) public activeCampaignsPerUser;
 
     uint256 public numberOfCampaigns = 0;
+    uint256 public constant MAX_CAMPAIGNS_PER_USER = 3;
 
     // Events for better frontend integration and transparency
     event CampaignCreated(
@@ -76,6 +79,12 @@ contract CrowdFunding {
         uint256 _deadline,
         string memory _image
     ) public returns (uint256) {
+        // Check campaign limit per user
+        require(
+            activeCampaignsPerUser[_owner] < MAX_CAMPAIGNS_PER_USER,
+            "User already has maximum number of active campaigns"
+        );
+
         // Ensure the campaign deadline is in the future
         require(
             _deadline > block.timestamp,
@@ -97,6 +106,9 @@ contract CrowdFunding {
         campaign.image = _image;
         campaign.claimed = false;
         campaign.state = CampaignState.Active;
+
+        // Increment active campaign count for this user
+        activeCampaignsPerUser[_owner]++;
 
         numberOfCampaigns++;
 
@@ -131,6 +143,7 @@ contract CrowdFunding {
         // Check if target has been reached
         if (campaign.amountCollected >= campaign.target) {
             campaign.state = CampaignState.Successful;
+            activeCampaignsPerUser[campaign.owner]--;
             emit CampaignStateChanged(_id, CampaignState.Successful);
         }
 
@@ -156,6 +169,7 @@ contract CrowdFunding {
             campaign.amountCollected < campaign.target
         ) {
             campaign.state = CampaignState.Failed;
+            activeCampaignsPerUser[campaign.owner]--;
             emit CampaignStateChanged(_id, CampaignState.Failed);
             revert("Campaign failed to reach target, donors can claim refunds");
         }
@@ -173,10 +187,10 @@ contract CrowdFunding {
     function claimRefund(uint256 _id) public campaignExists(_id) {
         // First check if user has donated anything
         uint256 amount = fundsByDonator[_id][msg.sender];
-        require(
-            amount > 0,
-            "You have not donated to this campaign or already claimed your refund"
-        );
+        require(amount > 0, "You have not donated to this campaign");
+
+        // Check if already refunded
+        require(!refundClaimed[_id][msg.sender], "Refund already claimed");
 
         Campaign storage campaign = campaigns[_id];
 
@@ -190,13 +204,15 @@ contract CrowdFunding {
         // Update state if needed
         if (campaign.state != CampaignState.Failed) {
             campaign.state = CampaignState.Failed;
+            activeCampaignsPerUser[campaign.owner]--;
             emit CampaignStateChanged(_id, CampaignState.Failed);
         }
 
-        // Reset refund amount before transfer to prevent reentrancy
+        // Mark as refunded and reset amount
+        refundClaimed[_id][msg.sender] = true;
         fundsByDonator[_id][msg.sender] = 0;
 
-        // Decrease the campaign's amountCollected
+        // Update campaign's amountCollected
         campaign.amountCollected -= amount;
 
         // Send refund
@@ -221,6 +237,10 @@ contract CrowdFunding {
             } else {
                 campaign.state = CampaignState.Failed;
             }
+
+            // Decrement active campaign count for owner
+            activeCampaignsPerUser[campaign.owner]--;
+
             emit CampaignStateChanged(_id, campaign.state);
         }
     }
@@ -251,5 +271,11 @@ contract CrowdFunding {
         uint256 _id
     ) public view campaignExists(_id) returns (Campaign memory) {
         return campaigns[_id];
+    }
+
+    function getActiveCampaignsCount(
+        address _user
+    ) public view returns (uint256) {
+        return activeCampaignsPerUser[_user];
     }
 }
