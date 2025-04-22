@@ -23,7 +23,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body>
-        <ThirdwebProvider clientId={clientId}>
+        <ThirdwebProvider clientId={clientId} activeChain="sepolia">
           <StateContextProvider>
             <div className="relative sm:p-8 p-4 bg-[#13131a] min-h-screen flex flex-row">
               <div className="sm:flex hidden mr-10 relative">
